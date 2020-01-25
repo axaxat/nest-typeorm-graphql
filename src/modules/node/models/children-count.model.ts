@@ -1,4 +1,4 @@
 export class ChildrenCount {
-    direct: number;
-    all: number;
+  direct: number;
+  all: number;
 }

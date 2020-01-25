@@ -8,131 +8,137 @@ import { ChildrenCount } from './models/children-count.model';
 
 @Injectable()
 export class NodeService {
-    constructor(
-        @InjectRepository(NodeEntity)
-        private readonly nodeRepository: Repository<NodeEntity>) { }
+  constructor(
+    @InjectRepository(NodeEntity)
+    private readonly nodeRepository: Repository<NodeEntity>,
+  ) {}
 
-    async findById(id: number): Promise<NodeEntity> {
-        return await this.nodeRepository.findOne(id);
+  async findById(id: number): Promise<NodeEntity> {
+    return await this.nodeRepository.findOne(id);
+  }
+
+  async findChildrenById(id: number): Promise<NodeEntity[]> {
+    return await this.nodeRepository.find({ parentId: id });
+  }
+
+  async findAll(): Promise<NodeEntity[]> {
+    return await this.nodeRepository.find();
+  }
+
+  async findRootNode(): Promise<NodeEntity> {
+    return await this.nodeRepository.findOne({ parentId: null });
+  }
+
+  async create(data: CreateNode): Promise<NodeEntity> {
+    const { title, userId, role, parentId } = data;
+
+    // check is parent node exist
+    if (parentId) {
+      const parentNode = await this.nodeRepository.findOne({ id: parentId });
+      if (!parentNode) {
+        throw new Error('Parent node not exist');
+      }
+    } else {
+      const rootNode = await this.findRootNode();
+      if (rootNode) {
+        throw new Error('Root node already exists');
+      }
     }
 
-    async findChildrenById(id: number): Promise<NodeEntity[]> {
-        return await this.nodeRepository.find({ parentId: id });
+    const node = new NodeEntity();
+    node.title = title;
+    node.userId = userId;
+    node.role = role;
+    node.parentId = parentId;
+
+    await this.nodeRepository.save(node);
+
+    return node;
+  }
+
+  async update(id: number, data: UpdateNode): Promise<NodeEntity> {
+    const { title, userId, role, parentId } = data;
+
+    if (id === parentId) {
+      throw new Error('Node id can not be equal parentId');
     }
 
-    async findAll(): Promise<NodeEntity[]> {
-        return await this.nodeRepository.find();
+    const node = await this.nodeRepository.findOne(id);
+
+    if (!node) {
+      throw new Error(`Node with id: ${id} not found`);
     }
 
-    async findRootNode(): Promise<NodeEntity> {
-        return await this.nodeRepository.findOne({ parentId: null });
-    }
+    if (parentId) {
+      const allNodes = await this.nodeRepository.find();
+      const childrenNodes = this.findAllChildren(id, allNodes);
+      const parentNode = await this.nodeRepository.findOne(parentId);
 
-    async create(data: CreateNode): Promise<NodeEntity> {
-        const { title, userId, role, parentId } = data;
+      if (!parentNode) {
+        throw new Error(`Node with id: ${parent} not found`);
+      }
 
-        // check is parent node exist
-        if (parentId) {
-            const parentNode = await this.nodeRepository.findOne({ id: parentId });
-            if (!parentNode) {
-                throw new Error('Parent node not exist');
-            }
-        } else {
-            const rootNode = await this.findRootNode();
-            if (rootNode) {
-                throw new Error('Root node already exists');
-            }
+      childrenNodes.forEach(el => {
+        if (el.id === parentId) {
+          throw new Error('Recursive reference');
         }
-
-        const node = new NodeEntity();
-        node.title = title;
-        node.userId = userId;
-        node.role = role;
-        node.parentId = parentId;
-
-        await this.nodeRepository.save(node);
-
-        return node;
+      });
     }
 
-    async update(id: number, data: UpdateNode): Promise<NodeEntity> {
-        const { title, userId, role, parentId } = data;
+    node.title = title || node.title;
+    node.role = role || node.role;
+    node.parentId = parentId || node.parentId;
+    node.userId = userId === null ? userId : node.userId;
 
-        if (id === parentId) {
-            throw new Error('Node id can not be equal parentId');
-        }
+    await this.nodeRepository.save(node);
 
-        const node = await this.nodeRepository.findOne(id);
+    return node;
+  }
 
-        if (!node) {
-            throw new Error(`Node with id: ${id} not found`);
-        }
+  async delete(id: number): Promise<boolean> {
+    const node = await this.nodeRepository.findOne(id);
 
-        if (parentId) {
-            const allNodes = await this.nodeRepository.find();
-            const childrenNodes = this.findAllChildren(id, allNodes);
-            const parentNode = await this.nodeRepository.findOne(parentId);
-
-            if (!parentNode) {
-                throw new Error(`Node with id: ${parent} not found`);
-            }
-
-            childrenNodes.forEach(el => {
-                if (el.id === parentId) {
-                    throw new Error('Recursive reference');
-                }
-            });
-        }
-
-        node.title = title || node.title;
-        node.role = role || node.role;
-        node.parentId = parentId || node.parentId;
-        node.userId = (userId === null) ? userId : node.userId;
-
-        await this.nodeRepository.save(node);
-
-        return node;
+    if (!node) {
+      throw new Error(`Node with id: ${id} not found`);
     }
 
-    async delete(id: number): Promise<boolean> {
+    // cascade remove
+    const allNodes = await this.nodeRepository.find();
+    const nodesToDelete = this.findAllChildren(id, allNodes);
+    nodesToDelete.push(node);
 
-        const node = await this.nodeRepository.findOne(id);
+    return !!(await this.nodeRepository.remove(nodesToDelete));
+  }
 
-        if (!node) {
-            throw new Error(`Node with id: ${id} not found`);
-        }
+  async getChildrenCounts(id: number): Promise<ChildrenCount> {
+    const entities = await this.nodeRepository.find();
+    const directChildren = this.findDirectChildren(id, entities);
+    const allChildren = this.findAllChildren(id, entities);
 
-        // cascade remove
-        const allNodes = await this.nodeRepository.find();
-        const nodesToDelete = this.findAllChildren(id, allNodes);
-        nodesToDelete.push(node);
+    return {
+      direct: directChildren.length,
+      all: allChildren.length,
+    };
+  }
 
-        return !!(await this.nodeRepository.remove(nodesToDelete));
-    }
+  private findDirectChildren(
+    nodeId: number,
+    entities: NodeEntity[],
+  ): NodeEntity[] {
+    const children = entities.filter(node => node.parentId === nodeId);
+    return children;
+  }
 
-    async getChildrenCounts(id: number): Promise<ChildrenCount> {
-        const entities = await this.nodeRepository.find();
-        const directChildren = this.findDirectChildren(id, entities);
-        const allChildren = this.findAllChildren(id, entities);
-
-        return {
-            direct: directChildren.length,
-            all: allChildren.length,
-        };
-    }
-
-    private findDirectChildren(nodeId: number, entities: NodeEntity[]): NodeEntity[] {
-        const children = entities.filter(node => node.parentId === nodeId);
-        return children;
-    }
-
-    private findAllChildren(nodeId: number, entities: NodeEntity[]): NodeEntity[] {
-        const directChildren = this.findDirectChildren(nodeId, entities);
-        const allChildren: NodeEntity[] = [];
-        directChildren.forEach(node => {
-            allChildren.push(...this.findAllChildren(node.id, entities));
-            allChildren.push(node);
-        });
-        return allChildren;
-    }
+  private findAllChildren(
+    nodeId: number,
+    entities: NodeEntity[],
+  ): NodeEntity[] {
+    const directChildren = this.findDirectChildren(nodeId, entities);
+    const allChildren: NodeEntity[] = [];
+    directChildren.forEach(node => {
+      allChildren.push(...this.findAllChildren(node.id, entities));
+      allChildren.push(node);
+    });
+    return allChildren;
+  }
 }
