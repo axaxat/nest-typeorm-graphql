@@ -1,7 +1,7 @@
 
 ## Description
 
-Знакомство с graphql. 
+Знакомство с graphql.
 
 ### Особенности:
 
@@ -19,11 +19,8 @@ $ npm install
 
 ```bash
 # Запуск с базой(нужен docker) http://localhost:3000/graphql 
-$ npm run start:withDB
-# Останавливает работу DB
-$ npm run stop:withDB
+$ npm run start:db
+$ npm run start
+# Останавливает работу docker-compose
+$ npm run stop:db
 ```
-
-## Test
-
-Тестов нет
